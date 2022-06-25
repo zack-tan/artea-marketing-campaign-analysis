@@ -1,0 +1,536 @@
+---
+title: "MRKT671_A1_md"
+date: "23/01/2022"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+# Frame the problem
+The main problem Artea is facing right now is even though customers would come and visit its website, 87% of them did not make a purchase. Since time spent and referral rates are healthy due to personalized email promotion, Artea came up with 3 ideas regarding this issue:
+- Customers need time and might come back and make purchases later
+- Follow up and encourange the customers who have purchase intention
+- Follow up and convince return customers
+
+The objective Artea was to get people purchase thus generate more revenue. Aretea would like to know which market strategy they should use in order to encourange customers to make their purchases. 
+
+The approach used by Artea decided to send discounted coupons to a selected group of registered users who visited the website recently and made no purchases. 
+
+Time horizon of this experiment: last 2 months
+Number of users involved: 5000
+Number of users who received coupons: 2500 (50%)
+Discount pct: 20%, valid for 1 month
+Experiment type: Between-subjects design
+Experiment method: Field experiment
+
+# Data Acquisition
+```{r}
+setwd("~/Documents/McGill/MRKT671/A1")
+artea_ab_test = read.csv("Artea_AB_test.csv")
+head(artea_ab_test,10)
+```
+Group by past purchases
+1: 0 purchases -> new customers
+2: old customers
+% new customers made purchases
+% old customers made purchases
+
+# Data Exploration
+```{r}
+library(skimr)
+skim(artea_ab_test)
+```
+
+All of the variables except ID are numeric. All categorical variables were encoded. We will transform these variables later.
+
+## Variables Distribution
+### trans_after
+Result variable. This variable represents how many users made transactions after coupons were sent out and how many transactions there were.
+
+1. Summary
+```{r}
+summary(artea_ab_test$trans_after)
+```
+
+2. Histogram
+```{r}
+hist(artea_ab_test$trans_after,main = "Histogram of number of transactions", xlab="Number of transactions")
+```
+
+
+3. Percentage of users who made transactions out of total population
+```{r}
+print("Percentage of customers who made purchases after treatment:")
+print(nrow(subset(artea_ab_test, trans_after>0))/nrow(artea_ab_test))
+print("Percentage of customers who did not make purchases after treatment:")
+print(nrow(subset(artea_ab_test, trans_after==0))/nrow(artea_ab_test))
+```
+
+Recall that Artea used to have 87% customer not making any purchases. Based on this result, the percentage of customers who made purchases after coupon had a minor increase. We will be looking at this percentage again at customers group level.
+
+### revenue_after
+Result variable, indicating how much did the customers spent if they made any purchases.
+
+1. Variable summary:
+```{r}
+summary(artea_ab_test$revenue_after)
+```
+
+Variable summary for customers who made purchases:
+```{r}
+summary(artea_ab_test[which(artea_ab_test$trans_after >= 1),]$revenue_after)
+```
+
+2. Distribution of revenue generated across all units in this experiment
+```{r}
+hist(artea_ab_test$revenue_after, main = "Histogram of revenue, all users", xlab = "revenue")
+```
+
+It is very skwed, as most customers did not make purchases.
+
+Distribution of revenue generated across unites who made purchases in this experiment
+```{r}
+hist(artea_ab_test[which(artea_ab_test$trans_after >= 1),]$revenue_after, main = "Histogram of revenue, users made transaction", xlab = "revenue")
+```
+
+It has a bell shape. Most of the customers spent between $40-70.
+
+3. Boxplot
+```{r}
+par(mfrow=c(1,2))
+boxplot(artea_ab_test$revenue_after,main="revenue (all units)")
+boxplot(artea_ab_test[which(artea_ab_test$trans_after == 1),]$revenue_after,main="revenue (transaction)")
+par(mfrow=c(1,1))
+```
+
+### test_coupon
+This is the variable indicating the user received coupon or not (condition).
+
+1. Each group's proportion out of the sample
+```{r}
+treatment_f_table = table(artea_ab_test$test_coupon)
+treatment_f_prop = as.data.frame(prop.table(treatment_f_table))
+names(treatment_f_prop)[1] = 'test_coupon'
+treatment_f_prop
+```
+
+Each group approximately have same amount of users.
+
+2. Frequency table of all other variables, based on conditions.
+a. transactions after treatment
+```{r}
+# Horizontal: test_coupon
+# Vertical: trans_after
+treatment_f_trans <- ftable(artea_ab_test$trans_after, artea_ab_test$test_coupon)
+treatment_f_trans
+```
+```{r}
+ftable(ifelse(artea_ab_test$trans_after == 0, 'no_trans', 'trans'), artea_ab_test$test_coupon)
+```
+
+
+b. revenue
+```{r}
+par(mfrow=c(1,2))
+boxplot(artea_ab_test[which(artea_ab_test$test_coupon == 1),]$revenue_after,main="Coupon")
+boxplot(artea_ab_test[which(artea_ab_test$test_coupon == 0),]$revenue_after,main="No Coupon")
+par(mfrow=c(1,1))
+```
+
+```{r}
+library(dplyr)
+
+artea_ab_test %>% 
+  group_by(test_coupon) %>%
+  summarise_at(vars(revenue_after),sum)
+```
+However, even though the percentage of customers who made purchases didn't increase a lot, the revenue that generated by those who received coupons were higher than the group who didn't receive the coupon.
+
+c. minority
+```{r}
+table(ifelse(artea_ab_test$minority == 1, 'minority', 'majority'))
+```
+
+```{r}
+# Horizontal: test_coupon
+# Vertical: minority
+treatment_f_minority <- ftable(ifelse(artea_ab_test$minority == 1, 'minority', 'majority'), artea_ab_test$test_coupon)
+treatment_f_minority
+```
+
+```{r}
+ftable(artea_ab_test$test_coupon, ifelse(artea_ab_test$trans_after == 0, 'no_trans', 'trans'),ifelse(artea_ab_test$minority == 1, 'minority', 'majority'))
+```
+
+
+This result proved that samples are well randomized across minority vs majority. 
+
+Histogram
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 1),]$minority,main="Coupon",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 0),]$minority,main="No Coupon",xlab=NULL)
+par(mfrow=c(1,1))
+```
+
+d. female
+```{r}
+# Horizontal: test_coupon
+# Vertical: female
+treatment_f_female <- ftable(artea_ab_test$female, artea_ab_test$test_coupon)
+prop.table(treatment_f_female)
+```
+
+We noticed some minor differences in sex within each condition.
+
+Histogram
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 1),]$female,main="Coupon",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 0),]$female,main="No Coupon",xlab=NULL)
+par(mfrow=c(1,1))
+```
+
+This result proved that samples are well randomized across sex. 
+```{r}
+table(artea_ab_test$female)/(2100+2900)
+```
+
+sex vs minority
+```{r}
+table(ifelse(artea_ab_test$female==1,"F","M"),ifelse(artea_ab_test$minority == 1, 'minority', 'majority'))
+```
+
+```{r}
+print(2288/1670)
+print(612/430)
+```
+
+```{r}
+ftable(artea_ab_test$test_coupon, ifelse(artea_ab_test$minority == 1, 'minority', 'majority'), ifelse(artea_ab_test$trans_after > 0, 'trans','no_trans'),ifelse(artea_ab_test$female==1,'female','male'))
+```
+
+sex vs revenue
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$female == 1 & artea_ab_test$trans_after>0),]$revenue_after ,main="Female",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$female == 0 & artea_ab_test$trans_after>0),]$revenue_after,main=" Male",xlab=NULL)
+par(mfrow=c(1,1))
+```
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 1 & artea_ab_test$trans_after>0),]$revenue_after ,main="Coupon",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 0 & artea_ab_test$trans_after>0),]$revenue_after,main="No Coupon",xlab=NULL)
+par(mfrow=c(1,1))
+```
+
+e. channel_acq
+```{r}
+# Horizontal: test_coupon
+# Vertical: channel_acq
+treatment_f_channel <- ftable(artea_ab_test$channel_acq, artea_ab_test$test_coupon)
+treatment_f_channel
+```
+
+```{r}
+ftable(ifelse(artea_ab_test$female==1,'F','M'),artea_ab_test$channel_acq)
+```
+
+```{r}
+ftable(ifelse(artea_ab_test$minority==1,'minority','majority'),artea_ab_test$channel_acq)
+```
+
+Histogram
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 1),]$channel_acq,main="Coupon",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 0),]$channel_acq,main="No Coupon",xlab=NULL)
+par(mfrow=c(1,1))
+```
+
+This result proved that samples are well randomized across channels. 
+
+```{r}
+hist(artea_ab_test$channel_acq,xlab=NULL, main = "Channel distribution")
+```
+
+
+f. num_past_purch
+Histogram under different condition
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$trans_after==0),]$num_past_purch,main="No transaction",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$trans_after>0),]$num_past_purch,main="Transaction occurred",xlab=NULL)
+par(mfrow=c(1,1))
+```
+
+g. spent_last_purchase
+Histogram under different condition
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$trans_after==0),]$spent_last_purchase,main="No transaction",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$trans_after>0),]$spent_last_purchase,main="Transaction occurred",xlab=NULL)
+par(mfrow=c(1,1))
+```
+
+h. weeks_since_visit: weeks since last visit
+Histogram under different condition
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$trans_after==0),]$weeks_since_visit,main="No transaction",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$trans_after>0),]$weeks_since_visit,main="Transaction",xlab=NULL)
+par(mfrow=c(1,1))
+```
+email to confirm.
+the last visit refers to the last visit before purchase. 
+
+i. browsing_minutes
+Histogram under different condition
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$trans_after==0),]$browsing_minutes,main="No transaction",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$trans_after>0),]$browsing_minutes,main="Transaction",xlab=NULL)
+par(mfrow=c(1,1))
+```
+browsing time in last visit.
+
+j. shopping_cart
+```{r}
+# Horizontal: test_coupon
+# Vertical: female
+treatment_f_shopping_cart <- ftable(artea_ab_test$shopping_cart, artea_ab_test$test_coupon)
+prop.table(treatment_f_shopping_cart)
+```
+
+```{r}
+par(mfrow=c(1,2))
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 1),]$shopping_cart,main="Coupon",xlab=NULL)
+hist(artea_ab_test[which(artea_ab_test$test_coupon == 0),]$shopping_cart,main="No Coupon",xlab=NULL)
+par(mfrow=c(1,1))
+```
+shopping cart vs transactions
+```{r}
+# Horizontal: shopping_cart
+# Vertical: trans_after
+f_shopping_cart <- ftable(artea_ab_test$trans_after, artea_ab_test$shopping_cart)
+f_shopping_cart 
+```
+```{r}
+# Horizontal: shopping_cart
+# Vertical: did transaction after coupon
+ftable(ifelse(artea_ab_test$trans_after == 0, 'no_trans', 'trans'), artea_ab_test$shopping_cart, ifelse(artea_ab_test$test_coupon == 1, 'coupon','no_coupon'))
+```
+1639 customers who had coupon with nothing sit in their shopping cart made no transactions.
+553 customers who had coupon with nothing sit in their shopping cart made transactions.
+
+# Preprocessing
+1. Change categorical variables as factor
+```{r}
+test_coupon_numeric = artea_ab_test$test_coupon
+artea_ab_test$test_coupon = as.factor(artea_ab_test$test_coupon)
+artea_ab_test$minority = as.factor(artea_ab_test$minority)
+artea_ab_test$female = as.factor(artea_ab_test$female)
+artea_ab_test$channel_acq = as.factor(artea_ab_test$channel_acq)
+```
+
+```{r}
+summary(artea_ab_test)
+```
+# Pivot table: Statistics for each demographic group
+Count of users in each group
+```{r}
+pivot_1 = artea_ab_test %>%
+  group_by(test_coupon, minority, female, channel_acq) %>%
+  tally()
+head(pivot_1) 
+```
+
+
+```{r}
+pivot_2 = artea_ab_test %>%
+  group_by(test_coupon, minority, female, channel_acq) %>%
+  summarise_at(vars(trans_after, revenue_after, num_past_purch,spent_last_purchase,weeks_since_visit,browsing_minutes,shopping_cart), mean)
+head(pivot_2)
+```
+```{r}
+pivot = merge(pivot_1, pivot_2, by=c("test_coupon", "minority", "female", "channel_acq"))
+head(pivot)
+```
+Save the pivot
+```{r}
+write.csv(pivot, file = "Artea_pivot.csv")
+```
+
+# Advanced grouping:KMeans
+```{r}
+artea_ab_test$shopping_cart  = as.factor(artea_ab_test$shopping_cart)
+library(clustMixType)
+col_lst = c("trans_after","revenue_after","test_coupon","minority","female","channel_acq","num_past_purch","spent_last_purchase","weeks_since_visit","browsing_minutes","shopping_cart")
+wss <- c()
+for (i in 1:20) {
+  wss <- c(wss, kproto(artea_ab_test[,col_lst],i,iter.max=1000,weighted = FALSE)$tot.withinss)}
+plot(1:20, wss, type="b", xlab="Number of Clusters",
+     ylab="Within groups sum of squares",col="firebrick")
+```
+
+```{r}
+user_cluster = kproto(artea_ab_test[,col_lst], 9, iter.max = 10, weighted = FALSE) 
+```
+```{r}
+clusters=data.frame(rownames(artea_ab_test[,col_lst]),user_cluster$cluster)
+library(RColorBrewer)
+library(scales)
+palette(alpha(brewer.pal(9,'Set1'), 0.5))
+plot(artea_ab_test[,col_lst], col=user_cluster$clust, pch=16)
+```
+
+```{r}
+artea_ab_test_cluster = artea_ab_test
+artea_ab_test_cluster$cluster = as.factor(user_cluster$cluster)
+pivot_1_c = artea_ab_test_cluster[,c(col_lst,'cluster')] %>%
+  group_by(test_coupon, minority, female, channel_acq, shopping_cart, cluster) %>%
+  tally()
+pivot_2_c = artea_ab_test_cluster %>%
+  group_by(test_coupon, minority, female, channel_acq, shopping_cart, cluster) %>%
+  summarise_at(vars(trans_after, revenue_after, num_past_purch,spent_last_purchase,weeks_since_visit,browsing_minutes), sum)
+pivot_c =  merge(pivot_1_c, pivot_2_c, by=c("test_coupon", "minority", "female", "channel_acq",'shopping_cart','cluster'))
+head(pivot_c)
+```
+
+```{r}
+artea_ab_test_cluster$trans_after_yes = ifelse(artea_ab_test_cluster$trans_after>0,1,0)
+artea_ab_test_cluster[which(artea_ab_test_cluster$cluster==6),]  %>%
+  group_by(test_coupon, cluster, trans_after_yes ) %>%
+  count()
+```
+
+```{r}
+write.csv(pivot_c,"Artea_pivot_cluster.csv")
+```
+
+
+# Randomization check
+```{r}
+library(data.table)
+# Adjust condition variable so that linear regression could take it in
+artea_ab_test_copy = copy(artea_ab_test)
+artea_ab_test_copy$test_coupon = test_coupon_numeric
+lm_rand_check = lm(test_coupon~minority+female+channel_acq+num_past_purch+spent_last_purchase+weeks_since_visit+browsing_minutes+shopping_cart, data = artea_ab_test_copy) 
+summary(lm_rand_check)
+```
+```{r}
+library(stargazer)
+stargazer(lm_rand_check, type="text")
+```
+
+Note that the coefficients are small with low significance, the linear model has very low R-squared as well, meaning using other demographic information, we can not tell which user is in the coupon group and which is not. Thus the experiment sample is well randomized.
+
+# Expenditure
+We know that the discount is 20%. Calculate the difference between the revenue before and after coupon for the coupon group purchases.
+```{r}
+coupon_group_valid = artea_ab_test[(artea_ab_test$trans_after>=1) & (artea_ab_test$test_coupon==1),]
+coupon_group_rev = sum(coupon_group_valid$revenue_after)
+loss_rev = (coupon_group_rev/0.8) * 0.2
+loss_rev
+```
+
+Coupon cost Artea $4858.7, however as we previously noticed, the group that received coupon generated more revenue compared to the other group.
+
+cost-benefit analysis
+
+# Correlation plot
+```{r}
+pairs(artea_ab_test[,-artea_ab_test$id], pch = 19)
+```
+   
+```{r}
+library(corrplot)
+corrplot(cor(artea_ab_test[,c("trans_after","revenue_after","num_past_purch","spent_last_purchase","weeks_since_visit","browsing_minutes")]), type="upper")
+```
+
+# Modelling
+1. Transactions vs coupon
+```{r}
+artea_ab_test$trans_after_yes = ifelse(artea_ab_test$trans_after == 0, 0, 1)
+artea_ab_test$trans_after_yes = as.factor(artea_ab_test$trans_after_yes)
+artea_ab_test$shopping_cart  = as.factor(artea_ab_test$shopping_cart)
+head(artea_ab_test)
+```
+
+```{r}
+lm_reg = glm(trans_after_yes~test_coupon+minority+female+channel_acq+num_past_purch+spent_last_purchase+weeks_since_visit+browsing_minutes+shopping_cart, data = artea_ab_test, family = binomial) 
+summary(lm_reg)
+```
+To get R^2
+```{r}
+require(rms)
+lm_reg_lrm = lrm(trans_after_yes~test_coupon+minority+female+channel_acq+num_past_purch+spent_last_purchase+weeks_since_visit+browsing_minutes+shopping_cart, data = artea_ab_test)
+print(lm_reg_lrm)
+```
+```{r}
+lm_reg_res = residuals(lm_reg)
+plot(predict(lm_reg),lm_reg_res, main="Residual Plot") 
+abline(0, 0) 
+```
+feature importance by R-square
+```{r}
+anova(lm_reg)
+```
+Random Forest
+```{r}
+library(randomForest)
+rf_classifier = randomForest(trans_after_yes~test_coupon+minority+female+channel_acq+num_past_purch+spent_last_purchase+weeks_since_visit+browsing_minutes+shopping_cart, ntree=1000, data=artea_ab_test, importance=TRUE, na.action = na.omit, do.trace=100)
+```
+```{r}
+rf_classifier_opt = randomForest(trans_after_yes~test_coupon+minority+female+channel_acq+num_past_purch+spent_last_purchase+weeks_since_visit+browsing_minutes+shopping_cart, ntree=800, data=artea_ab_test, importance=TRUE, na.action = na.omit)
+importance(rf_classifier_opt)
+```
+
+
++ hypothesis test on coupon
+Kindly note that T-test failed to reject the null hypothesis (does not consider demographic info).
+Test is based on mean+variance of revenue
+```{r}
+t.test(revenue_after~test_coupon, alternative = "two.sided", mu=0,data = artea_ab_test,var.equal =T,conf.level = 0.95)
+```
+
+2. Revenue vs coupon: which factors drives revenue (potential)
+```{r}
+lm_reg_rev = lm(revenue_after~trans_after_yes+test_coupon+minority+female+channel_acq+num_past_purch+spent_last_purchase+weeks_since_visit+browsing_minutes+shopping_cart, data = artea_ab_test) 
+summary(lm_reg_rev)
+```
+```{r}
+lm_reg_rev_res = resid(lm_reg_rev)
+plot(artea_ab_test$revenue_after, lm_reg_rev_res, ylab="Residuals", xlab="Revenue", main="Residual Plot") 
+abline(0, 0)                  
+```
+
+```{r}
+anova(lm_reg_rev)
+```
+```{r}
+lm_reg_rev_no_trans = lm(revenue_after~test_coupon+minority+female+channel_acq+num_past_purch+spent_last_purchase+weeks_since_visit+browsing_minutes+shopping_cart, data = artea_ab_test) 
+summary(lm_reg_rev_no_trans)
+```
+```{r}
+anova(lm_reg_rev_no_trans,lm_reg_rev)
+```
+
+# Feature Importance
+Based on R-square
+```{r}
+library(relaimpo)
+sort(calc.relimp(lm_reg_rev, type = "lmg", rela = F)$lmg, decreasing = T)
+```
+
+Based on Random Forest
+```{r}
+library(randomForest)
+rf = randomForest(revenue_after~trans_after_yes+test_coupon+minority+female+channel_acq+num_past_purch+spent_last_purchase+weeks_since_visit+browsing_minutes+shopping_cart, ntree=1000, data=artea_ab_test, importance=TRUE, na.action = na.omit, do.trace=100)
+```
+
+```{r}
+rf_opt = randomForest(revenue_after~trans_after_yes+test_coupon+minority+female+channel_acq+num_past_purch+spent_last_purchase+weeks_since_visit+browsing_minutes+shopping_cart, ntree=900, data=artea_ab_test, importance=TRUE, na.action = na.omit)
+importance(rf_opt)
+```
+
